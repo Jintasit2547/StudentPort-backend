@@ -8,10 +8,12 @@ const userSchema = new mongoose.Schema(
       required: true,
       unique: true,
     },
+
     password: {
       type: String,
       required: true,
     },
+
     displayName: {
       type: String,
       required: true,
@@ -26,7 +28,7 @@ const userSchema = new mongoose.Schema(
     status: {
       type: String,
       enum: ["pending", "approved", "rejected"],
-      default: "pending",
+      default: "pending", // ต้องรออนุมัติจาก Admin
     },
 
     studentCardUrl: String,
@@ -38,11 +40,18 @@ const userSchema = new mongoose.Schema(
       default: "local",
     },
 
-    /* ✅ NEW fields for profile */
+    /* ✅ NEW field for university (โชว์ใน UI เช่น KMUTT) */
+    university: {
+      type: String,
+      default: "KMUTT", // ตั้งค่าเริ่มต้น หรือให้ frontend กรอกเองก็ได้
+    },
+
+    /* ✅ Optional profile fields */
     bio: String,
     contactEmail: String,
     phone: String,
     profileImageUrl: String,
+
     socialLinks: {
       linkedin: String,
       github: String,
@@ -50,7 +59,7 @@ const userSchema = new mongoose.Schema(
       website: String,
     },
 
-    /* ✅ NEW fields for reset password */
+    /* ✅ Optional: reset password feature */
     resetPasswordToken: String,
     resetPasswordExpires: Date,
   },

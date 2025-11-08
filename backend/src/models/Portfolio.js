@@ -11,17 +11,17 @@ const PortfolioSchema = new mongoose.Schema(
       index: true,
     },
 
-    // ===== ฟิลด์ตาม requirement ใหม่ =====
-    title: { type: String, required: true },            // Title
-    description: { type: String, default: "" },         // Description
-    yearOfProject: { type: Number, required: true },    // Year of project
-    category: { type: String, required: true },         // Category (เช่น AI, Web, UX)
+    // ===== ฟิลด์หลัก =====
+    title: { type: String, required: true },     // Title
+    description: { type: String, default: "" },  // Description
+    year: { type: Number, required: true },      // Year (ใช้ field นี้จริง ๆ)
+    category: { type: String, required: true },  // Category (AI, Web, UX, ...)
 
     // Attach files (images 1–10)
-    images: { type: [String], default: [] },            // เส้นทางไฟล์รูป
-    coverImageUrl: { type: String },                    // ใช้ images[0] เป็นค่าเริ่มต้นตอนสร้าง
+    images: { type: [String], default: [] },
+    coverImageUrl: { type: String },
 
-    // ===== เวิร์กโฟลว์ Sprint 2–4 =====
+    // ===== เวิร์กโฟลว์ =====
     visibility: {
       type: String,
       enum: ["public", "private"],
@@ -34,16 +34,23 @@ const PortfolioSchema = new mongoose.Schema(
       default: "Draft",
       index: true,
     },
-    reviewComment: { type: String },                    // เหตุผลจาก Reviewer
+    reviewComment: { type: String },
     reviewer: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     revision: { type: Number, default: 0 },
   },
   { timestamps: true }
 );
 
-// ดัชนีที่ช่วยให้ค้นหาเร็วขึ้น (อย่าประกาศก่อนสร้าง schema)
-PortfolioSchema.index({ visibility: 1, statusV2: 1, yearOfProject: 1, category: 1, owner: 1 });
+// ✅ ปรับ index ให้ใช้ year (ไม่ใช่ yearOfProject)
+PortfolioSchema.index({
+  visibility: 1,
+  statusV2: 1,
+  year: 1,
+  category: 1,
+  owner: 1,
+});
+
+// ❌ ไม่ต้องมี transform แปลง yearOfProject -> year อีกต่อไป เพราะเราเก็บเป็น year แล้ว
 
 const Portfolio = mongoose.model("Portfolio", PortfolioSchema);
 export default Portfolio;
-

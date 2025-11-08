@@ -65,7 +65,7 @@ router.put("/:id/visibility", auth, async (req, res) => {
       return res.status(403).json({ message: "You cannot change this portfolio" });
     }
 
-    // ✅ เพิ่ม
+    // ✅ เพิ่ม: อนุญาตเฉพาะงานที่ Approved ให้ public ได้
     if (visibility === "public" && portfolio.statusV2 !== "Approved") {
       return res.status(400).json({ message: "Only Approved portfolios can be set to public" });
     }
@@ -84,7 +84,6 @@ router.put("/:id/visibility", auth, async (req, res) => {
 /** helper: map สถานะเก่ามาเป็น v2 (กันพังเวลางานเก่าจาก sprint 1) */
 function normalizeV2Status(p) {
   if (p.statusV2) return; // มีอยู่แล้ว
-  // map แบบ soft
   if (p.status === "approved") p.statusV2 = "Approved";
   else if (p.status === "rejected") p.statusV2 = "Rejected";
   else p.statusV2 = "Pending"; // เดิมคือ submitted
@@ -189,9 +188,7 @@ router.post(
       normalizeV2Status(portfolio);
 
       if (!["InProcess", "Pending"].includes(portfolio.statusV2)) {
-        return res
-          .status(400)
-          .json({ message: "Only InProcess/Pending can be approved" });
+        return res.status(400).json({ message: "Only InProcess/Pending can be approved" });
       }
 
       portfolio.statusV2 = "Approved";
@@ -233,6 +230,7 @@ router.post(
     }
   }
 );
+
 /** -------------------------------------------
  * ✅ Sprint 4: Search / View + Edit & Resubmit + Profile Filter
  * ------------------------------------------*/
@@ -241,70 +239,36 @@ router.post(
  * GET /api/portfolio/public
  * ดูผลงานสาธารณะ (Approved เท่านั้น) + ตัวกรองพื้นฐาน
  * query:
- *  - q         : ค้นหาด้วย keyword (title/desc/tags/award)
- *  - tag       : comma-separated (เช่น ?tag=AI,Design)
- *  - year      : awardYear
- *  - award     : ข้อความรางวัล (regex)
- *  - page,limit: pagination (default 1, 12)
+ *  - q       : keyword (title/description/category)
+ *  - year    : year
+ *  - category: category
+ *  - page,limit: pagination
  */
 router.get("/public", async (req, res) => {
   try {
-    const {
-      q,
-      tag,
-      year,
-      award,
-      page = 1,
-      limit = 12,
-    } = req.query;
+    const { q, year, category, page = 1, limit = 12 } = req.query;
 
-    const filter = {
-      visibility: "public",
-      statusV2: "Approved", // เฉพาะที่อนุมัติแล้ว
-    };
+    const filter = { visibility: "public", statusV2: "Approved" };
 
-    if (year) filter.awardYear = Number(year);
+    if (year) filter.yearOfProject = Number(year);
+    if (category) filter.category = String(category).trim();
 
-    // แท็กหลายตัว
-    if (tag) {
-      const tags = String(tag)
-        .split(",")
-        .map((t) => t.trim())
-        .filter(Boolean);
-      if (tags.length) {
-        filter.tags = { $all: tags };
-      }
-    }
-
-    // keyword ค้นหลายช่อง
     if (q) {
       const regex = new RegExp(String(q).trim(), "i");
-      filter.$or = [{ title: regex }, { desc: regex }, { tags: regex }, { award: regex }];
-    }
-
-    // award text
-    if (award) {
-      const r = new RegExp(String(award).trim(), "i");
-      filter.award = r;
+      filter.$or = [{ title: regex }, { description: regex }, { category: regex }];
     }
 
     const skip = (Number(page) - 1) * Number(limit);
-
     const [items, total] = await Promise.all([
       Portfolio.find(filter)
-        .populate("owner", "displayName email role")
+        .populate("owner", "displayName email university role")
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(Number(limit)),
       Portfolio.countDocuments(filter),
     ]);
 
-    return res.json({
-      page: Number(page),
-      limit: Number(limit),
-      total,
-      items,
-    });
+    return res.json({ page: Number(page), limit: Number(limit), total, items });
   } catch (err) {
     console.error("public search error:", err);
     return res.status(500).json({ message: "Server error" });
@@ -330,36 +294,35 @@ router.get("/:id/public", async (req, res) => {
     return res.status(500).json({ message: "Server error" });
   }
 });
-/* ------------------------ Sprint 4: Edit & Resubmit ------------------------ */
 
+/* ------------------------ Sprint 4: Edit & Resubmit ------------------------ */
 /**
  * PUT /api/portfolio/:id/edit
  * นักศึกษาแก้งานได้เฉพาะ Draft / Rejected
+ * ฟิลด์: title, description, year, category
  */
 router.put("/:id/edit", auth, async (req, res) => {
   try {
-    const { title, desc, tags, award, awardYear, workDate } = req.body;
+    const { title, description, year, category } = req.body;
 
     const p = await Portfolio.findById(req.params.id);
     if (!p) return res.status(404).json({ message: "Not found" });
-
     if (p.owner.toString() !== req.user.id)
       return res.status(403).json({ message: "Not yours" });
-
-    // แก้ได้เฉพาะ Draft / Rejected
     if (!["Draft", "Rejected"].includes(p.statusV2))
       return res.status(400).json({ message: "Only Draft/Rejected can be edited" });
 
-    // อัปเดตข้อมูล
-    if (title) p.title = title;
-    if (desc) p.desc = desc;
-    if (tags) p.tags = tags.split(",");
-    if (award) p.award = award;
-    if (awardYear) p.awardYear = awardYear;
-    if (workDate) p.workDate = workDate;
+    if (title !== undefined) p.title = title;
+    if (description !== undefined) p.description = description;
+    if (category !== undefined) p.category = category;
+    if (year !== undefined) {
+      const y = Number(year);
+      if (!Number.isInteger(y) || y < 1900 || y > 3000)
+        return res.status(400).json({ message: "Year must be a valid year" });
+      p.yearOfProject = y;
+    }
 
-    p.reviewComment = ""; // clear review comment before resubmit
-
+    p.reviewComment = "";
     await p.save();
     return res.json({ message: "Updated draft", data: p });
   } catch (err) {
@@ -369,33 +332,29 @@ router.put("/:id/edit", auth, async (req, res) => {
 });
 
 /* ------------------------ Sprint 4: Filter Portfolio by User Profile ------------------------ */
-
 /**
  * GET /api/portfolio/user/:userId
  * ดูผลงานของคนหนึ่ง (Public only if guest)
- * query: tag, year, award
+ * query: q, year, category
  */
 router.get("/user/:userId", async (req, res) => {
   try {
     const { userId } = req.params;
-    const { tag, year, award } = req.query;
+    const { q, year, category } = req.query;
 
-    const filter = {
-      owner: userId,
-      statusV2: "Approved",
-    };
+    const filter = { owner: userId, statusV2: "Approved" };
+    if (!req.user || req.user.id !== userId) filter.visibility = "public";
 
-    // ถ้าไม่ใช่เจ้าของ → โชว์เฉพาะ public
-    if (!req.user || req.user.id !== userId) {
-      filter.visibility = "public";
+    if (year) filter.yearOfProject = Number(year);
+    if (category) filter.category = String(category).trim();
+
+    if (q) {
+      const regex = new RegExp(String(q).trim(), "i");
+      filter.$or = [{ title: regex }, { description: regex }, { category: regex }];
     }
 
-    if (year) filter.awardYear = Number(year);
-    if (tag) filter.tags = { $all: tag.split(",").map(t => t.trim()) };
-    if (award) filter.award = new RegExp(String(award).trim(), "i");
-
     const items = await Portfolio.find(filter)
-      .populate("owner", "displayName email role")
+      .populate("owner", "displayName email university role")
       .sort({ createdAt: -1 });
 
     return res.json(items);
@@ -406,5 +365,3 @@ router.get("/user/:userId", async (req, res) => {
 });
 
 export default router;
-
-

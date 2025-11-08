@@ -10,26 +10,26 @@ const router = express.Router();
  * POST /api/portfolio/v2
  * Create Draft (Sprint 2) ด้วยฟิลด์ใหม่:
  * - title (required)
- * - yearOfProject (required, number)
+ * - year (required, number)
  * - category (required, string)
  * - description (optional)
  * - images (required, at least 1, max 10) -> form-data
  */
+// src/routes/portfolio.v2.js
 router.post("/v2", auth, uploadPortfolioV2, async (req, res) => {
   try {
-    const { title, description, yearOfProject, category } = req.body;
+    // ✅ เปลี่ยนตรงนี้ให้รับ year แทน yearOfProject
+    const { title, description, year, category } = req.body;
 
     if (!title) return res.status(400).json({ message: "Title is required" });
-    if (!yearOfProject) return res.status(400).json({ message: "Year of project is required" });
+    if (!year) return res.status(400).json({ message: "Year is required" });
     if (!category) return res.status(400).json({ message: "Category is required" });
 
-    // แปลงปีเป็น Number (กัน front ส่ง string มา)
-    const yearNum = Number(yearOfProject);
+    const yearNum = Number(year);
     if (!Number.isInteger(yearNum) || yearNum < 1900 || yearNum > 3000) {
-      return res.status(400).json({ message: "Year of project must be a valid year" });
+      return res.status(400).json({ message: "Year must be a valid year" });
     }
 
-    // ตรวจรูปอย่างน้อย 1 รูป และไม่เกิน 10
     const imgFiles = req.files?.images || [];
     if (imgFiles.length < 1) {
       return res.status(400).json({ message: "At least one image is required" });
@@ -38,16 +38,14 @@ router.post("/v2", auth, uploadPortfolioV2, async (req, res) => {
       return res.status(400).json({ message: "Maximum 10 images allowed" });
     }
 
-    const images = imgFiles.map((f) =>
-      // เก็บ path แบบ relative จากโฟลเดอร์ src เพื่อเสิร์ฟผ่าน /uploads ได้
-      `uploads/portfolio_v2/${f.filename}`
-    );
+    const images = imgFiles.map((f) => `uploads/portfolio_v2/${f.filename}`);
 
+    // ✅ บันทึกลง DB โดยใช้ yearOfProject = yearNum
     const portfolio = await Portfolio.create({
       owner: req.user.id,
       title,
       description: description || "",
-      yearOfProject: yearNum,
+      year: yearNum, // ✅ ใช้ชื่อ field ใหม่ใน DB
       category,
       images,
       coverImageUrl: images[0],
@@ -58,7 +56,6 @@ router.post("/v2", auth, uploadPortfolioV2, async (req, res) => {
     return res.status(201).json({ message: "Draft saved", data: portfolio });
   } catch (err) {
     console.error("Create draft v2 error:", err);
-    // จับ error จาก multer ด้วย
     if (err instanceof Error && /Only image files/i.test(err.message)) {
       return res.status(400).json({ message: err.message });
     }
@@ -68,6 +65,7 @@ router.post("/v2", auth, uploadPortfolioV2, async (req, res) => {
     return res.status(500).json({ message: "Server error" });
   }
 });
+
 
 /**
  * POST /api/portfolio/:id/v2/submit
